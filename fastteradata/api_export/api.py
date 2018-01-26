@@ -53,7 +53,7 @@ def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata
         print(f"Starting process for: {db}.{table_name}")
         script_name = table_name
         print("Grabbing meta data and generating fast export file...")
-        col_list, fexp_scripts, did_partition, dtype_dict = parse_sql_single_table(abs_path, env,db,table_name, nrows=nrows, connector=connector, columns = columns, partition_key=partition_key, partition_type=partition_type, primary_keys=primary_keys, meta_table=meta_table, where_clause=where_clause, suppress_text=suppress_text, step_detail=step_detail)
+        col_list, fexp_scripts, did_partition, dtype_dict = parse_sql_single_table(abs_path, env,db,table_name, nrows=nrows, connector=connector, columns = columns, partition_key=partition_key, partition_type=partition_type, primary_keys=primary_keys, meta_table=meta_table, where_clause=where_clause, suppress_text=suppress_text)
 
         #FOR MULTIPROCESSING WHEN PUT INTO A PACKAGE
         from .multiprocess import call_sub

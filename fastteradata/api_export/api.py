@@ -3,6 +3,12 @@ import time
 import pandas as pd
 import numpy as np
 import os
+import subprocess
+import shlex
+import errno
+import pty
+import select
+import signal
 
 from joblib import Parallel, delayed
 
@@ -11,7 +17,7 @@ from ..file_processors.io_processors import *
 from ..metadata_processors.metadata_processors import *
 
 
-def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata", columns = [], clean_and_serialize="feather", partition_key="", partition_type="year", primary_keys=[], meta_table="", where_clause="", suppress_text="False"):
+def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata", columns = [], clean_and_serialize="feather", partition_key="", partition_type="year", primary_keys=[], meta_table="", where_clause="", suppress_text="False", step_detail=False):
     """
         Summary:
             Extracts table information from Teradata and saves / executes the appropriate files
@@ -31,6 +37,7 @@ def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata
                                     is COMBINED into a SINGLE DATA FILE and finishes processing through the following cleaning, data type specification, and serializing.
             partition_type (str): *default = 'year'* Default is to partition the partition_key by distict YEAR. Valid options include "year" or "month"
             suppress_text(bool): *default = 'False'* Default is not to suppress the fast export SQL text.
+            step_detail(bool): *default = False* Defailt is not to output extract detail from running the export script.
    
         Returns:
             Column list recieved from the metadata if clean_and_pickle is set to False, else nothing. Column names are returned in this case so you can save them and use them to read the raw data file
@@ -60,10 +67,77 @@ def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata
         print("finished")
         #Can only execute in parrelel from command line in windows, won't execute from jupyter notebooks on a windows machine
         #So we only parrelelize if we see we are on linux
+        
+        # uses code written 2017 by Tobias Brink
+        #http://tbrink.science/blog/2017/04/30/processing-the-output-of-a-subprocess-with-python-in-realtime/
+        class OutStream:
+        def __init__(self, fileno):
+            self._fileno = fileno
+            self._buffer = ""
+
+        def read_lines(self):
+            try:
+                output = os.read(self._fileno, 1000).decode()
+            except OSError as e:
+                if e.errno != errno.EIO: raise
+                output = ""
+            lines = output.split("\n")
+            lines[0] = self._buffer + lines[0] # prepend previous
+                                               # non-finished line.
+            if output:
+                self._buffer = lines[-1]
+                return lines[:-1], True
+            else:
+                self._buffer = ""
+                if len(lines) == 1 and not lines[0]:
+                    # We did not have buffer left, so no output at all.
+                    lines = []
+                return lines, False
+
+        def fileno(self):
+            return self._fileno
+        
+        #!/usr/bin/env python3
+
+        signal.signal(signal.SIGINT, lambda s,f: print("received SIGINT"))
+
+        def run_process(fexp, progress):
+            print(fexp)
+            if progress == True:
+                # Start the subprocess.
+                out_r, out_w = pty.openpty()
+                err_r, err_w = pty.openpty()
+                proc = subprocess.Popen([fexp], shell=True, stdout=out_w, stderr=err_w)
+                os.close(out_w) # if we do not write to process, close these.
+                os.close(err_w)
+
+                fds = {OutStream(out_r), OutStream(err_r)}
+                while fds:
+                # Call select(), anticipating interruption by signals.
+                    while True:
+                        try:
+                            rlist, _, _ = select.select(fds, [], [])
+                            break
+                        except InterruptedError:
+                            continue
+                    # Handle all file descriptors that are ready.
+                    for f in rlist:
+                        lines, readable = f.read_lines()
+                        for line in lines:
+                            print(line)
+                        if not readable:
+                            fds.remove(f)
+            else:
+                proc = subprocess.Popen([fexp], shell=True, stdout=out_w, stderr=err_w)
+            return
+        
         import subprocess
         for f in fexp_scripts:
             print(f"Calling Fast Export on file...  {f}")
-            subprocess.call(f"fexp < {f}", shell=True)
+            if step_detail == True:
+                run_process(f"fexp < {f}", True)
+            else:
+                run_process(f"fexp < {f}",False)
         #Parrelel execution needs to be further worked out. Not behaving as expected so we will come back to it later
         """
         if os.name == "nt":

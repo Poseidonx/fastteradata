@@ -76,34 +76,34 @@ def run_process(fexp, progress):
         proc = subprocess.Popen([fexp], shell=True, stdout=out_w, stderr=err_w)
         os.close(out_w) # if we do not write to process, close these.
         os.close(err_w)
-
-        fds = {OutStream(out_r), OutStream(err_r)}
-        while fds:
-        # Call select(), anticipating interruption by signals.
-            while True:
-                try:
-                    rlist, _, _ = select.select(fds, [], [])
-                    break
-                except InterruptedError:
-                    continue
-            # Handle all file descriptors that are ready.
-            for f in rlist:
-                lines, readable = f.read_lines()
-                # Example: Just print every line. Add your real code here.
-                current = 0
-                bar_start = 0
-                total = 0
-                for line in lines:
-                    print(line)
-                    total = return_total_data_blocks(line)
-                    if total > 0:
-                        bar_start = 1
-                    if bar_start == 1:
-                        current = return_current_data_blocks(line)+current
-                        bar.update(current)
-                if not readable:
-                    # This OutStream is finished.
-                    fds.remove(f)
+        if progress == True:
+            fds = {OutStream(out_r), OutStream(err_r)}
+            while fds:
+            # Call select(), anticipating interruption by signals.
+                while True:
+                    try:
+                        rlist, _, _ = select.select(fds, [], [])
+                        break
+                    except InterruptedError:
+                        continue
+                # Handle all file descriptors that are ready.
+                for f in rlist:
+                    lines, readable = f.read_lines()
+                    # Example: Just print every line. Add your real code here.
+                    current = 0
+                    bar_start = 0
+                    total = 0
+                    for line in lines:
+                        print(line)
+                        total = return_total_data_blocks(line)
+                        if total > 0:
+                            bar_start = 1
+                        if bar_start == 1:
+                            current = return_current_data_blocks(line)+current
+                            bar.update(current)
+                    if not readable:
+                        # This OutStream is finished.
+                        fds.remove(f)
         return
 
 def call_sub(f, step_detail):
@@ -114,5 +114,5 @@ def call_sub(f, step_detail):
         sys.stdout.flush()
         print("Fast Export Complete")
     else:
-        
+        run_process(f"exp < {f} -s ON",False)
     return("")

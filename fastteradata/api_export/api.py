@@ -71,31 +71,31 @@ def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata
         # uses code written 2017 by Tobias Brink
         #http://tbrink.science/blog/2017/04/30/processing-the-output-of-a-subprocess-with-python-in-realtime/
         class OutStream:
-        def __init__(self, fileno):
-            self._fileno = fileno
-            self._buffer = ""
-
-        def read_lines(self):
-            try:
-                output = os.read(self._fileno, 1000).decode()
-            except OSError as e:
-                if e.errno != errno.EIO: raise
-                output = ""
-            lines = output.split("\n")
-            lines[0] = self._buffer + lines[0] # prepend previous
-                                               # non-finished line.
-            if output:
-                self._buffer = lines[-1]
-                return lines[:-1], True
-            else:
+            def __init__(self, fileno):
+                self._fileno = fileno
                 self._buffer = ""
-                if len(lines) == 1 and not lines[0]:
-                    # We did not have buffer left, so no output at all.
-                    lines = []
-                return lines, False
 
-        def fileno(self):
-            return self._fileno
+            def read_lines(self):
+                try:
+                    output = os.read(self._fileno, 1000).decode()
+                except OSError as e:
+                    if e.errno != errno.EIO: raise
+                    output = ""
+                lines = output.split("\n")
+                lines[0] = self._buffer + lines[0] # prepend previous
+                                                   # non-finished line.
+                if output:
+                    self._buffer = lines[-1]
+                    return lines[:-1], True
+                else:
+                    self._buffer = ""
+                    if len(lines) == 1 and not lines[0]:
+                        # We did not have buffer left, so no output at all.
+                        lines = []
+                    return lines, False
+
+            def fileno(self):
+                return self._fileno
         
         #!/usr/bin/env python3
 

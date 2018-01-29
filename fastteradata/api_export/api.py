@@ -37,7 +37,7 @@ def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata
                                     is COMBINED into a SINGLE DATA FILE and finishes processing through the following cleaning, data type specification, and serializing.
             partition_type (str): *default = 'year'* Default is to partition the partition_key by distict YEAR. Valid options include "year" or "month"
             suppress_text(bool): *default = 'False'* Default is not to suppress the fast export SQL text.
-            step_detail(bool): *default = False* Defailt is not to output extract detail from running the export script.
+                step_detail(bool): *default = False* Defailt is not to output extract detail from running the export script. This only works on Linux. Cannot select True on Windows. Will add code to auto-detect.
    
         Returns:
             Column list recieved from the metadata if clean_and_pickle is set to False, else nothing. Column names are returned in this case so you can save them and use them to read the raw data file
@@ -100,17 +100,38 @@ def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata
         #!/usr/bin/env python3
 
         signal.signal(signal.SIGINT, lambda s,f: print("received SIGINT"))
-
+        
+        def check_line(line,total_blocks, current_blocks):
+            a = ['0001','0002','0003','0004','Select request submitted to the RDBMS.','data blocks generated.','Retrieval Rows statistics:','Elapsed time:','CPU time:','MB/sec:','MB/cpusec:','Total processor time','Start :','End   :','Highest return','running average']
+            b = ['running average'] 
+            c = ['data blocks generated.']
+            if any (x in line for x in a):
+                print(line)            
+                if any (y in line for y in c):
+                    find_1 = line.find('.')
+                    find_2 = line[find_1+2:].find(' ')
+                    total_blocks = int(line[find_1+2:-(len(line)-find_1-find_2-2)])
+                if any (y in line for y in b):
+                    find_1 = line.rfind('blocks')-1
+                    find_2 = line[:-len(line)+find_1].rfind(' ')
+                    current_blocks = (5*int(line[find_2+1:-len(line)+find_1-3])) + current_blocks
+                    print('     ' + str("{:,}".format(current_blocks)) + '/' + str("{:,}".format(total_blocks)) + ' (' + str(int(current_blocks*100/total_blocks)) + '%) Blocks processed')
+                    #update to run and strip ls -l to get a more granular update
+            return (total_blocks, current_blocks)
+        
+        
         def run_process(fexp, progress):
             print(fexp)
+            
+            # Start the subprocess.
+            current_blocks = 0
+            total_blocks = 0
+            out_r, out_w = pty.openpty()
+            err_r, err_w = pty.openpty()
+            proc = subprocess.Popen([fexp], shell=True, stdout=out_w, stderr=err_w)
+            os.close(out_w) # if we do not write to process, close these.
+            os.close(err_w)
             if progress == True:
-                # Start the subprocess.
-                out_r, out_w = pty.openpty()
-                err_r, err_w = pty.openpty()
-                proc = subprocess.Popen([fexp], shell=True, stdout=out_w, stderr=err_w)
-                os.close(out_w) # if we do not write to process, close these.
-                os.close(err_w)
-
                 fds = {OutStream(out_r), OutStream(err_r)}
                 while fds:
                 # Call select(), anticipating interruption by signals.
@@ -124,11 +145,10 @@ def extract_table(abs_path, table_name, env, db, nrows=-1, connector = "teradata
                     for f in rlist:
                         lines, readable = f.read_lines()
                         for line in lines:
-                            print(line)
+                            total_blocks, current_blocks = check_line(line, total_blocks, current_blocks)
+                            #print(line)
                         if not readable:
                             fds.remove(f)
-            else:
-                proc = subprocess.Popen([fexp], shell=True, stdout=out_w, stderr=err_w)
             return
         
         import subprocess
